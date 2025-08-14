@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Talk2Trade - AI Trading Assistant</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- Sidebar -->
+      <div class="sidebar">
+        <div class="sidebar-header">
+          <h2><i class="fas fa-chart-line"></i> Talk2Trade</h2>
+          <button class="new-chat-btn" onclick="startNewChat()">
+            <i class="fas fa-plus"></i> New Chat
+          </button>
+        </div>
+        <div class="chat-history" id="chatHistory">
+          <!-- Chat history will be populated here -->
+        </div>
+      </div>
+
+      <!-- Main Chat Area -->
+      <div class="main-content">
+        <div class="chat-container" id="chatContainer">
+          <div class="welcome-message" id="welcomeMessage">
+            <div class="welcome-icon">
+              <i class="fas fa-robot"></i>
+            </div>
+            <h1>Welcome to Talk2Trade</h1>
+            <div class="feature-highlights">
+              <div class="feature">
+                <i class="fas fa-comments"></i>
+                <span>Text Chat</span>
+              </div>
+              <div class="feature">
+                <i class="fas fa-microphone"></i>
+                <span>Voice Input</span>
+              </div>
+              <div class="feature">
+                <i class="fas fa-chart-bar"></i>
+                <span>Trading Insights</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="input-container">
+          <div class="input-wrapper">
+            <div class="input-box">
+              <textarea
+                id="messageInput"
+                placeholder="Message Talk2Trade..."
+                rows="1"
+                oninput="autoResize(this)"
+              ></textarea>
+              <div class="input-actions">
+                <button
+                  class="audio-btn"
+                  id="audioBtn"
+                  onclick="toggleAudioRecording()"
+                >
+                  <i class="fas fa-microphone" id="audioIcon"></i>
+                </button>
+                <button class="send-btn" onclick="sendMessage()">
+                  <i class="fas fa-paper-plane"></i>
+                </button>
+              </div>
+            </div>
+            <div
+              class="audio-recording"
+              id="audioRecording"
+              style="display: none"
+            >
+              <div class="recording-indicator">
+                <div class="pulse"></div>
+                <span>Recording... Click to stop</span>
+              </div>
+              <button class="stop-recording-btn" onclick="stopAudioRecording()">
+                <i class="fas fa-stop"></i>
+              </button>
+            </div>
+          </div>
+          <div class="input-footer">
+            <p>
+              Talk2Trade can make mistakes. Consider checking important
+              information.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  </body>
+</html>
