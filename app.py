@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, jsonify
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from openai import OpenAI
 from config import (
     OPENAI_API_KEY, 
@@ -8,6 +8,8 @@ from config import (
     MAX_TOKENS, 
     TEMPERATURE, 
     SYSTEM_PROMPT,
+    CATEGORY_PROMPT,
+    CATEGORIES,
     FLASK_HOST,
     FLASK_PORT,
     FLASK_DEBUG
@@ -27,7 +29,6 @@ else:
 url = "https://api.elections.kalshi.com/trade-api/v2/markets"
 response = requests.get(url)
 markets_data = response.json()
-print(markets_data)
 conversations = {}
 
 @app.route('/')
@@ -54,11 +55,11 @@ def chat():
     
     # Call OpenAI API if available
     if client:
-        try:
+        try:            
             response = client.chat.completions.create(
                 model=DEFAULT_MODEL,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "system", "content": CATEGORY_PROMPT + ", ".join(CATEGORIES)},
                     {"role": "user", "content": message}
                 ],
                 max_tokens=MAX_TOKENS,
@@ -67,12 +68,31 @@ def chat():
             
             # Extract the response content
             ai_response = response.choices[0].message.content
+            categories = ai_response.split(", ")
+
+            series_tickers = []
+            for category in categories:
+                s = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/series?category={category}")
+                data = s.json()
+                tickers = [item["ticker"] for item in data["series"]]
+                series_tickers += tickers
+            markets = []
+            for ticker in series_tickers:
+                m = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker={ticker}")
+                data = m.json()
+                for item in data["markets"]:
+                    open_time = datetime.fromisoformat(item["open_time"].replace("Z", "+00:00"))
+                    close_time = datetime.fromisoformat(item["close_time"].replace("Z", "+00:00"))
+                    if open_time < datetime.now(timezone.utc) < close_time:
+                        markets.append(item)
+            
+            print(markets)
             
         except Exception as e:
             print(f"OpenAI API Error: {e}")
-            ai_response = f"I received your message: '{message}'. This is where your trading logic would go. (Note: OpenAI API call failed - {str(e)})"
+            ai_response = f"I received your message: '{message}'. This is where your logic would go. (Note: OpenAI API call failed - {str(e)})"
     else:
-        ai_response = f"I received your message: '{message}'. This is where your trading logic would go. (Note: OpenAI API key not configured)"
+        ai_response = f"I received your message: '{message}'. This is where your logic would go. (Note: OpenAI API key not configured)"
     
     # Add assistant response to conversation
     assistant_message = {

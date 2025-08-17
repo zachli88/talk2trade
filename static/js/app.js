@@ -43,6 +43,23 @@ async function sendMessage() {
 
   if (!message) return;
 
+  // Check for special commands
+  if (message.toLowerCase() === "/markets") {
+    addMessageToChat("user", message);
+    messageInput.value = "";
+    messageInput.style.height = "auto";
+    await displayMarketData();
+    return;
+  }
+
+  if (message.toLowerCase() === "/categories") {
+    addMessageToChat("user", message);
+    messageInput.value = "";
+    messageInput.style.height = "auto";
+    await displayEventCategories();
+    return;
+  }
+
   // Add user message to chat
   addMessageToChat("user", message);
 
@@ -62,6 +79,7 @@ async function sendMessage() {
       body: JSON.stringify({
         message: message,
         conversation_id: currentConversationId,
+        refresh_markets: true, // Always get fresh market data for trading queries
       }),
     });
 
@@ -285,6 +303,133 @@ function updateConversationHistory() {
   // This would typically update the sidebar with conversation history
   // For now, we'll just log it
   console.log("Conversation updated:", currentConversationId);
+}
+
+// Refresh market data
+async function refreshMarketData() {
+  try {
+    const response = await fetch("/api/markets/refresh", {
+      method: "POST",
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      console.log("Market data refreshed:", data.message);
+      // Optionally show a success message to the user
+      showMarketStatus();
+    } else {
+      console.error("Failed to refresh market data:", data.message);
+    }
+  } catch (error) {
+    console.error("Error refreshing market data:", error);
+  }
+}
+
+// Show market status
+async function showMarketStatus() {
+  try {
+    const response = await fetch("/api/markets/status");
+    const data = await response.json();
+
+    console.log("Market Status:", data);
+
+    // You can display this information in the UI if desired
+    // For now, we'll just log it to the console
+  } catch (error) {
+    console.error("Error getting market status:", error);
+  }
+}
+
+// Display market data in chat
+async function displayMarketData() {
+  try {
+    const response = await fetch("/api/markets/status");
+    const data = await response.json();
+
+    if (data.status === "Data available") {
+      let marketInfo = `📊 **Current Market Status**\n\n`;
+      marketInfo += `Active Markets: ${data.markets_count}\n`;
+      marketInfo += `Last Updated: ${new Date(
+        data.last_updated
+      ).toLocaleString()}\n\n`;
+
+      if (data.sample_markets && data.sample_markets.length > 0) {
+        marketInfo += `**Sample Markets:**\n`;
+        data.sample_markets.forEach((market) => {
+          marketInfo += `• ${market.title}\n`;
+          marketInfo += `  Status: ${market.status} | Price: ${market.last_price} | Volume: ${market.volume}\n\n`;
+        });
+      }
+
+      addMessageToChat("assistant", marketInfo);
+    } else {
+      addMessageToChat(
+        "assistant",
+        "No market data available. Try refreshing the markets."
+      );
+    }
+  } catch (error) {
+    console.error("Error displaying market data:", error);
+    addMessageToChat(
+      "assistant",
+      "Error fetching market data. Please try again."
+    );
+  }
+}
+
+// Display event categories in chat
+async function displayEventCategories() {
+  try {
+    const response = await fetch("/api/events/categories");
+    const data = await response.json();
+
+    if (data.success) {
+      let categoriesInfo = `📋 **Kalshi Event Categories**\n\n`;
+      categoriesInfo += `Total Events: ${data.total_events}\n`;
+      categoriesInfo += `Unique Categories: ${data.categories_count}\n`;
+      categoriesInfo += `Last Updated: ${new Date(
+        data.timestamp
+      ).toLocaleString()}\n\n`;
+
+      if (data.categories && data.categories.length > 0) {
+        categoriesInfo += `**Available Categories:**\n`;
+        // Group categories by first letter
+        const categoriesByLetter = {};
+        data.categories.forEach((category) => {
+          const firstLetter = category[0]?.toUpperCase() || "Other";
+          if (!categoriesByLetter[firstLetter]) {
+            categoriesByLetter[firstLetter] = [];
+          }
+          categoriesByLetter[firstLetter].push(category);
+        });
+
+        // Display categories alphabetically
+        Object.keys(categoriesByLetter)
+          .sort()
+          .forEach((letter) => {
+            categoriesInfo += `${letter}:\n`;
+            categoriesByLetter[letter].sort().forEach((category) => {
+              categoriesInfo += `  • ${category}\n`;
+            });
+            categoriesInfo += "\n";
+          });
+      }
+
+      addMessageToChat("assistant", categoriesInfo);
+    } else {
+      addMessageToChat(
+        "assistant",
+        "Failed to fetch event categories. Please try again."
+      );
+    }
+  } catch (error) {
+    console.error("Error displaying event categories:", error);
+    addMessageToChat(
+      "assistant",
+      "Error fetching event categories. Please try again."
+    );
+  }
 }
 
 // Add typing dots animation CSS

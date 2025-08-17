@@ -8,9 +8,15 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
 # Model Configuration
-DEFAULT_MODEL = "gpt-3.5-turbo"  # Change to "gpt-4" if you have access
+DEFAULT_MODEL = "gpt-4"  # Change to "gpt-4" if you have access
 MAX_TOKENS = 500
 TEMPERATURE = 0.7
+
+CATEGORIES = ["COVID-19", "Climate and Weather", "Companies", "Crypto", "Economics", "Elections", "Education", "Entertainment", "Financials", "Health", "Mentions", "Politics", "Science and Technology", "Sports", "Social", "Transportation", "World"]
+
+CATEGORY_PROMPT = """You are Talk2Trade, an AI-powered trading assistant for the Kalshi platform. 
+Here is a list of categories that are currently available on the platform. The user's input is a trade they want to make on Kalshi.
+Use this list to return only the most relevant category(ies) for the user's input. Categories: """
 
 # System Prompt for Talk2Trade
 SYSTEM_PROMPT = """You are Talk2Trade, an AI-powered trading assistant. Help users with:
