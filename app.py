@@ -1,5 +1,7 @@
 from flask import Flask, render_template, request, jsonify
+from rapidfuzz import process
 import os
+import json
 from datetime import datetime, timezone
 from openai import OpenAI
 from config import (
@@ -9,6 +11,7 @@ from config import (
     TEMPERATURE, 
     SYSTEM_PROMPT,
     CATEGORY_PROMPT,
+    EVENTS_PROMPT,
     CATEGORIES,
     FLASK_HOST,
     FLASK_PORT,
@@ -65,26 +68,58 @@ def chat():
                 max_tokens=MAX_TOKENS,
                 temperature=TEMPERATURE
             )
+
+            key_words = client.chat.completions.create(
+                model=DEFAULT_MODEL,
+                messages=[
+                    {"role": "system", "content": "Extract the key words from the user's input and return them in lowercase as a comma separated list."},
+                    {"role": "user", "content": message}
+                ],
+                max_tokens=MAX_TOKENS,
+                temperature=TEMPERATURE
+            )
+
+            key_words = set(key_words.choices[0].message.content.split(", "))
             
             # Extract the response content
             ai_response = response.choices[0].message.content
             categories = ai_response.split(", ")
 
-            series_tickers = []
+            series = []
             for category in categories:
                 s = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/series?category={category}")
                 data = s.json()
-                tickers = [item["ticker"] for item in data["series"]]
-                series_tickers += tickers
+                series += [[item["ticker"], item["title"], item["tags"]] for item in data["series"]]
+
+            shortlisted_series = shortlist_series(series, key_words)
+
+            events = []
+            for ticker, _, _ in shortlisted_series:
+                e = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/events?series_ticker={ticker}")
+                data = e.json()
+                for item in data["events"]:
+                    events.append([item["title"], item["event_ticker"]])
+
+            response = client.chat.completions.create(
+                model=DEFAULT_MODEL,
+                messages=[
+                    {"role": "system", "content": EVENTS_PROMPT},
+                    {"role": "system", "content": json.dumps(events)},
+                    {"role": "user", "content": message}
+                ],
+                max_tokens=MAX_TOKENS,
+                temperature=TEMPERATURE
+            )
+
+            best_ticker = response.choices[0].message.content
             markets = []
-            for ticker in series_tickers:
-                m = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker={ticker}")
-                data = m.json()
-                for item in data["markets"]:
-                    open_time = datetime.fromisoformat(item["open_time"].replace("Z", "+00:00"))
-                    close_time = datetime.fromisoformat(item["close_time"].replace("Z", "+00:00"))
-                    if open_time < datetime.now(timezone.utc) < close_time:
-                        markets.append(item)
+            m = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/markets?event_ticker={best_ticker}")
+            data = m.json()
+            for item in data["markets"]:
+                open_time = datetime.fromisoformat(item["open_time"].replace("Z", "+00:00"))
+                close_time = datetime.fromisoformat(item["close_time"].replace("Z", "+00:00"))
+                if open_time < datetime.now(timezone.utc) < close_time:
+                    markets.append(item)
             
             print(markets)
             
@@ -142,6 +177,19 @@ def audio():
         'response': response,
         'conversation_id': conversation_id
     })
+
+def shortlist_series(series, msg):
+    scored = []
+    for s in series:
+        title = s[1].lower()
+        tags  = " ".join(s[2]).lower() if s[2] else ""
+        # score = process.extractOne(msg, [title + " " + tags])[1]
+        score = sum(t in msg for t in title.lower().split()) + sum(t in msg for t in tags.lower().split())
+        scored.append((score, s))
+    scored.sort(reverse=True, key=lambda x: x[0])
+    scored = scored[:min(len(scored), 25)]
+    scored = [x[1] for x in scored]
+    return scored
 
 @app.route('/api/conversations/<conversation_id>')
 def get_conversation(conversation_id):

@@ -68,58 +68,6 @@ body {
   background: #0d8f6f;
 }
 
-.refresh-markets-btn {
-  width: 100%;
-  padding: 10px 16px;
-  background: #6b7280;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.refresh-markets-btn:hover {
-  background: #4b5563;
-}
-
-.refresh-markets-btn i {
-  font-size: 12px;
-}
-
-.refresh-categories-btn {
-  width: 100%;
-  padding: 10px 16px;
-  background: #8b5cf6;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.refresh-categories-btn:hover {
-  background: #7c3aed;
-}
-
-.refresh-categories-btn i {
-  font-size: 12px;
-}
-
 .chat-history {
   flex: 1;
   padding: 20px;
@@ -435,33 +383,4 @@ body {
 .chat-container::-webkit-scrollbar-thumb:hover,
 .chat-history::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
-}
-
-.welcome-message .feature-highlights {
-  display: flex;
-  justify-content: center;
-  gap: 30px;
-  margin: 30px 0;
-}
-
-.welcome-message .commands-info {
-  margin-top: 30px;
-  padding: 20px;
-  background: #f8f9fa;
-  border-radius: 12px;
-  border: 1px solid #e9ecef;
-}
-
-.welcome-message .commands-info p {
-  margin: 8px 0;
-  color: #495057;
-  font-size: 14px;
-}
-
-.welcome-message .commands-info code {
-  background: #e9ecef;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: "Courier New", monospace;
-  color: #495057;
 }
