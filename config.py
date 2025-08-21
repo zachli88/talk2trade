@@ -19,7 +19,7 @@ Here is a list of categories that are currently available on the platform. The u
 Use this list to return only the most relevant category(ies) for the user's input. Categories: """
 
 EVENTS_PROMPT = """Choose the single best event that is most relevant to the user's input based on titles. 
-The user's input is a trade they want to make on Kalshi. Return the ticker of the series that best matches the user's input. Make sure there are no surrounding quotes around the returned ticker"""
+The user's input is a trade they want to make on Kalshi. Return ONLY the ticker as plain text (no quotes, no JSON, no code blocks)."""
 
 # System Prompt for Talk2Trade
 SYSTEM_PROMPT = """You are Talk2Trade, an AI-powered trading assistant. Help users with:

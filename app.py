@@ -1,5 +1,11 @@
 from flask import Flask, render_template, request, jsonify
 from rapidfuzz import process
+import base64
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from dotenv import load_dotenv
+import uuid
+from clients import KalshiHttpClient, KalshiWebSocketClient, Environment
 import os
 import json
 from datetime import datetime, timezone
@@ -21,6 +27,12 @@ import requests
 
 app = Flask(__name__)
 
+# Load environment variables first
+load_dotenv()
+env = Environment.DEMO # toggle environment here
+KEYID = os.getenv('DEMO_KEYID') if env == Environment.DEMO else os.getenv('PROD_KEYID')
+KEYFILE = os.getenv('DEMO_KEYFILE') if env == Environment.DEMO else os.getenv('PROD_KEYFILE')
+
 # Initialize OpenAI client
 if not OPENAI_API_KEY:
     print("Warning: OPENAI_API_KEY not found. Please set it in your environment or .env file.")
@@ -33,6 +45,17 @@ url = "https://api.elections.kalshi.com/trade-api/v2/markets"
 response = requests.get(url)
 markets_data = response.json()
 conversations = {}
+
+try:
+    with open(KEYFILE, "rb") as key_file:
+        private_key = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None
+        )
+except FileNotFoundError:
+    raise FileNotFoundError(f"Private key file not found at {KEYFILE}")
+except Exception as e:
+    raise Exception(f"Error loading private key: {str(e)}")
 
 @app.route('/')
 def index():
@@ -95,7 +118,7 @@ def chat():
 
             events = []
             for ticker, _, _ in shortlisted_series:
-                e = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/events?series_ticker={ticker}")
+                e = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/events?series_ticker={ticker}&min_close_ts=1")
                 data = e.json()
                 for item in data["events"]:
                     events.append([item["title"], item["event_ticker"]])
@@ -108,20 +131,55 @@ def chat():
                     {"role": "user", "content": message}
                 ],
                 max_tokens=MAX_TOKENS,
-                temperature=TEMPERATURE
+                temperature=0
             )
-
+            
             best_ticker = response.choices[0].message.content
-            markets = []
+            market_ticker = None
             m = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/markets?event_ticker={best_ticker}")
             data = m.json()
             for item in data["markets"]:
                 open_time = datetime.fromisoformat(item["open_time"].replace("Z", "+00:00"))
                 close_time = datetime.fromisoformat(item["close_time"].replace("Z", "+00:00"))
                 if open_time < datetime.now(timezone.utc) < close_time:
-                    markets.append(item)
-            
-            print(markets)
+                    market_ticker = item["ticker"]
+                    break
+
+            if market_ticker != None:
+                print(market_ticker)
+                timestamp = str(int(datetime.now(timezone.utc).timestamp() * 1000))
+                method = "POST"
+                path = "/trade-api/v2/portfolio/orders"
+                signature = sign_request(private_key, timestamp, method, path)
+
+                headers = {
+                    'KALSHI-ACCESS-KEY': KEYID,
+                    'KALSHI-ACCESS-SIGNATURE': signature,
+                    'KALSHI-ACCESS-TIMESTAMP': timestamp,
+                    'Content-Type': 'application/json'
+                }
+
+                order_data = {
+                    "ticker": market_ticker,
+                    "action": "buy",
+                    "side": "yes",
+                    "count": 1,
+                    "type": "limit",
+                    "yes_price": 99,
+                    "client_order_id": str(uuid.uuid4())
+                }
+                
+                response = requests.post("https://demo-api.kalshi.co/trade-api/v2/portfolio/orders", headers=headers, json=order_data)
+                if response.status_code == 201:
+                    order = response.json()['order']
+                    print(f"Order placed successfully!")
+                    print(f"Order ID: {order['order_id']}")
+                    print(f"Client Order ID: {order_data['client_order_id']}")
+                    print(f"Status: {order['status']}")
+                else:
+                    print(f"Error: {response.status_code} - {response.text}")
+            else:
+                ai_response = "Currently no markets found for this trade."
             
         except Exception as e:
             print(f"OpenAI API Error: {e}")
@@ -190,6 +248,23 @@ def shortlist_series(series, msg):
     scored = scored[:min(len(scored), 25)]
     scored = [x[1] for x in scored]
     return scored
+
+def sign_request(private_key, timestamp, method, path):
+    # Create the message to sign
+    message = f"{timestamp}{method}{path}".encode('utf-8')
+    
+    # Sign with RSA-PSS
+    signature = private_key.sign(
+        message,
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()),
+            salt_length=padding.PSS.DIGEST_LENGTH
+        ),
+        hashes.SHA256()
+    )
+    
+    # Return base64 encoded
+    return base64.b64encode(signature).decode('utf-8')
 
 @app.route('/api/conversations/<conversation_id>')
 def get_conversation(conversation_id):
