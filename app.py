@@ -1,6 +1,9 @@
 from flask import Flask, render_template, request, jsonify
 from rapidfuzz import process
 import base64
+import whisper
+import tempfile
+import os
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from dotenv import load_dotenv
@@ -46,6 +49,8 @@ response = requests.get(url)
 markets_data = response.json()
 conversations = {}
 
+model = whisper.load_model("turbo")
+
 try:
     with open(KEYFILE, "rb") as key_file:
         private_key = serialization.load_pem_private_key(
@@ -82,104 +87,7 @@ def chat():
     # Call OpenAI API if available
     if client:
         try:            
-            response = client.chat.completions.create(
-                model=DEFAULT_MODEL,
-                messages=[
-                    {"role": "system", "content": CATEGORY_PROMPT + ", ".join(CATEGORIES)},
-                    {"role": "user", "content": message}
-                ],
-                max_tokens=MAX_TOKENS,
-                temperature=TEMPERATURE
-            )
-
-            key_words = client.chat.completions.create(
-                model=DEFAULT_MODEL,
-                messages=[
-                    {"role": "system", "content": "Extract the key words from the user's input and return them in lowercase as a comma separated list."},
-                    {"role": "user", "content": message}
-                ],
-                max_tokens=MAX_TOKENS,
-                temperature=TEMPERATURE
-            )
-
-            key_words = set(key_words.choices[0].message.content.split(", "))
-            
-            # Extract the response content
-            ai_response = response.choices[0].message.content
-            categories = ai_response.split(", ")
-
-            series = []
-            for category in categories:
-                s = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/series?category={category}")
-                data = s.json()
-                series += [[item["ticker"], item["title"], item["tags"]] for item in data["series"]]
-
-            shortlisted_series = shortlist_series(series, key_words)
-
-            events = []
-            for ticker, _, _ in shortlisted_series:
-                e = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/events?series_ticker={ticker}&min_close_ts=1")
-                data = e.json()
-                for item in data["events"]:
-                    events.append([item["title"], item["event_ticker"]])
-
-            response = client.chat.completions.create(
-                model=DEFAULT_MODEL,
-                messages=[
-                    {"role": "system", "content": EVENTS_PROMPT},
-                    {"role": "system", "content": json.dumps(events)},
-                    {"role": "user", "content": message}
-                ],
-                max_tokens=MAX_TOKENS,
-                temperature=0
-            )
-            
-            best_ticker = response.choices[0].message.content
-            market_ticker = None
-            m = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/markets?event_ticker={best_ticker}")
-            data = m.json()
-            for item in data["markets"]:
-                open_time = datetime.fromisoformat(item["open_time"].replace("Z", "+00:00"))
-                close_time = datetime.fromisoformat(item["close_time"].replace("Z", "+00:00"))
-                if open_time < datetime.now(timezone.utc) < close_time:
-                    market_ticker = item["ticker"]
-                    break
-
-            if market_ticker != None:
-                print(market_ticker)
-                timestamp = str(int(datetime.now(timezone.utc).timestamp() * 1000))
-                method = "POST"
-                path = "/trade-api/v2/portfolio/orders"
-                signature = sign_request(private_key, timestamp, method, path)
-
-                headers = {
-                    'KALSHI-ACCESS-KEY': KEYID,
-                    'KALSHI-ACCESS-SIGNATURE': signature,
-                    'KALSHI-ACCESS-TIMESTAMP': timestamp,
-                    'Content-Type': 'application/json'
-                }
-
-                order_data = {
-                    "ticker": market_ticker,
-                    "action": "buy",
-                    "side": "yes",
-                    "count": 1,
-                    "type": "limit",
-                    "yes_price": 99,
-                    "client_order_id": str(uuid.uuid4())
-                }
-                
-                response = requests.post("https://demo-api.kalshi.co/trade-api/v2/portfolio/orders", headers=headers, json=order_data)
-                if response.status_code == 201:
-                    order = response.json()['order']
-                    print(f"Order placed successfully!")
-                    print(f"Order ID: {order['order_id']}")
-                    print(f"Client Order ID: {order_data['client_order_id']}")
-                    print(f"Status: {order['status']}")
-                else:
-                    print(f"Error: {response.status_code} - {response.text}")
-            else:
-                ai_response = "Currently no markets found for this trade."
+            ai_response = get_response(message)
             
         except Exception as e:
             print(f"OpenAI API Error: {e}")
@@ -209,21 +117,33 @@ def audio():
     audio_file = request.files['audio']
     conversation_id = request.form.get('conversation_id', 'default')
     
-    # Here you would process the audio file
-    # For now, we'll just acknowledge receipt
-    response = "I received your audio message. Audio processing would happen here."
-    
     # Add to conversation
     if conversation_id not in conversations:
         conversations[conversation_id] = []
     
-    user_message = {
-        'role': 'user',
-        'content': '[Audio Message]',
-        'timestamp': datetime.now().isoformat()
-    }
-    conversations[conversation_id].append(user_message)
-    
+    try:
+        file_extension = os.path.splitext(audio_file.filename)[1] if audio_file.filename else '.wav'
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
+            audio_file.save(temp_file.name)
+            temp_file_path = temp_file.name
+        
+        result = model.transcribe(temp_file_path)
+        transcribed_text = result["text"]
+        user_message = {
+            'role': 'user',
+            'content': transcribed_text,
+            'timestamp': datetime.now().isoformat()
+        }
+        conversations[conversation_id].append(user_message)
+        response = get_response(transcribed_text)
+
+        # Clean up the temporary file
+        os.unlink(temp_file_path)
+
+    except Exception as e:
+        print(f"Audio transcription error: {e}")
+        response = f"Sorry, I couldn't transcribe your audio message. Error: {str(e)}"
+
     assistant_message = {
         'role': 'assistant',
         'content': response,
@@ -232,6 +152,7 @@ def audio():
     conversations[conversation_id].append(assistant_message)
     
     return jsonify({
+        'transcribed_text': transcribed_text,
         'response': response,
         'conversation_id': conversation_id
     })
@@ -265,6 +186,105 @@ def sign_request(private_key, timestamp, method, path):
     
     # Return base64 encoded
     return base64.b64encode(signature).decode('utf-8')
+
+def get_response(message):
+    response = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        messages=[
+            {"role": "system", "content": CATEGORY_PROMPT + ", ".join(CATEGORIES)},
+            {"role": "user", "content": message}
+        ],
+        max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE
+    )
+
+    key_words = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        messages=[
+            {"role": "system", "content": "Extract the key words from the user's input and return them in lowercase as a comma separated list."},
+            {"role": "user", "content": message}
+        ],
+        max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE
+    )
+
+    key_words = set(key_words.choices[0].message.content.split(", "))
+    
+    # Extract the response content
+    categories = response.choices[0].message.content.split(", ")
+
+    series = []
+    for category in categories:
+        s = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/series?category={category}")
+        data = s.json()
+        if data["series"]:
+            series += [[item["ticker"], item["title"], item["tags"]] for item in data["series"]]
+
+    shortlisted_series = shortlist_series(series, key_words)
+    events = []
+    for ticker, _, _ in shortlisted_series:
+        e = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/events?series_ticker={ticker}&min_close_ts=1")
+        data = e.json()
+        for item in data["events"]:
+            events.append([item["title"], item["event_ticker"]])
+
+    response = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        messages=[
+            {"role": "system", "content": EVENTS_PROMPT},
+            {"role": "system", "content": json.dumps(events)},
+            {"role": "user", "content": message}
+        ],
+        max_tokens=MAX_TOKENS,
+        temperature=0
+    )
+    
+    best_ticker = response.choices[0].message.content
+
+    market_ticker = None
+    m = requests.get(f"https://api.elections.kalshi.com/trade-api/v2/markets?event_ticker={best_ticker}")
+    data = m.json()
+    for item in data["markets"]:
+        open_time = datetime.fromisoformat(item["open_time"].replace("Z", "+00:00"))
+        close_time = datetime.fromisoformat(item["close_time"].replace("Z", "+00:00"))
+        if open_time < datetime.now(timezone.utc) < close_time:
+            market_ticker = item["ticker"]
+            break
+
+    if market_ticker != None:
+        timestamp = str(int(datetime.now(timezone.utc).timestamp() * 1000))
+        method = "POST"
+        path = "/trade-api/v2/portfolio/orders"
+        signature = sign_request(private_key, timestamp, method, path)
+
+        headers = {
+            'KALSHI-ACCESS-KEY': KEYID,
+            'KALSHI-ACCESS-SIGNATURE': signature,
+            'KALSHI-ACCESS-TIMESTAMP': timestamp,
+            'Content-Type': 'application/json'
+        }
+
+        order_data = {
+            "ticker": market_ticker,
+            "action": "buy",
+            "side": "yes",
+            "count": 1,
+            "type": "limit",
+            "yes_price": 99,
+            "client_order_id": str(uuid.uuid4())
+        }
+        print(market_ticker)
+        response = requests.post("https://demo-api.kalshi.co/trade-api/v2/portfolio/orders", headers=headers, json=order_data)
+        if response.status_code == 201:
+            order = response.json()['order']
+            ai_response = f"Order placed successfully! Order ID: {order['order_id']} Client Order ID: {order_data['client_order_id']} Status: {order['status']}"
+
+        else:
+            ai_response = f"Error: {response.status_code} - {response.text}"
+    else:
+        ai_response = "Currently no markets found for this trade."
+    
+    return ai_response
 
 @app.route('/api/conversations/<conversation_id>')
 def get_conversation(conversation_id):

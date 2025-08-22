@@ -218,7 +218,6 @@ function stopAudioRecording() {
 // Send audio message
 async function sendAudioMessage(audioBlob) {
   // Show audio message in chat
-  addMessageToChat("user", "[Audio Message]");
 
   // Show typing indicator
   showTypingIndicator();
@@ -237,7 +236,7 @@ async function sendAudioMessage(audioBlob) {
 
     // Hide typing indicator
     hideTypingIndicator();
-
+    addMessageToChat("user", data.transcribed_text);
     // Add assistant response to chat
     addMessageToChat("assistant", data.response);
 
