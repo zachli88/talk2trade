@@ -14,8 +14,11 @@ TEMPERATURE = 0.7
 
 CATEGORIES = ["COVID-19", "Climate and Weather", "Companies", "Crypto", "Economics", "Elections", "Education", "Entertainment", "Financials", "Health", "Mentions", "Politics", "Science and Technology", "Sports", "Social", "Transportation", "World"]
 
-CATEGORY_PROMPT = """You are Talk2Trade, an AI-powered trading assistant for the Kalshi platform. 
-Here is a list of categories that are currently available on the platform. The user's input is a trade they want to make on Kalshi.
+EXTRACT_VOLUME_AND_SIDE_PROMPT = """You are Talk2Trade, an AI-powered trading assistant for the Kalshi platform. Extract the amount of contracts the user wants to trade and the side of the trade ('yes' or 'no'). Return the volume and side as an array of size two. For example, if the user's input is 'Buy 10 yes contracts that Trump will run for a third term', return [10, 'yes']. If no number is found, default to 1. If no side is found default to 'yes'."""
+
+TRIM_PROMPT = """Remove the volume and side from the user's input. Return the result as plain text. For example, if the user's input is 'Buy 10 yes contracts that Trump will run for a third term ', return 'Trump will run for a third term'."""
+
+CATEGORY_PROMPT = """Here is a list of categories that are currently available on the platform. The user's input is a trade they want to make on Kalshi.
 Use this list to return only the most relevant category(ies) for the user's input. Categories: """
 
 EVENTS_PROMPT = """Choose the single best event that is most relevant to the user's input based on titles. 

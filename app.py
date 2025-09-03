@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify
 from rapidfuzz import process
 import base64
 import whisper
+import ast
 import tempfile
 import os
 from cryptography.hazmat.primitives import hashes, serialization
@@ -20,6 +21,8 @@ from config import (
     TEMPERATURE, 
     SYSTEM_PROMPT,
     CATEGORY_PROMPT,
+    EXTRACT_VOLUME_AND_SIDE_PROMPT,
+    TRIM_PROMPT,
     EVENTS_PROMPT,
     CATEGORIES,
     FLASK_HOST,
@@ -191,6 +194,29 @@ def get_response(message):
     response = client.chat.completions.create(
         model=DEFAULT_MODEL,
         messages=[
+            {"role": "system", "content": EXTRACT_VOLUME_AND_SIDE_PROMPT},
+            {"role": "user", "content": message}
+        ],
+    ).choices[0].message.content
+    
+    # Parse the string representation of array back to actual array
+    parsed_response = ast.literal_eval(response)
+    
+    volume = parsed_response[0]
+    side = parsed_response[1]
+
+    message = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        messages=[
+            {"role": "system", "content": TRIM_PROMPT},
+            {"role": "user", "content": message}
+        ],
+    ).choices[0].message.content
+    print(message)
+
+    response = client.chat.completions.create(
+        model=DEFAULT_MODEL,
+        messages=[
             {"role": "system", "content": CATEGORY_PROMPT + ", ".join(CATEGORIES)},
             {"role": "user", "content": message}
         ],
@@ -267,8 +293,8 @@ def get_response(message):
         order_data = {
             "ticker": market_ticker,
             "action": "buy",
-            "side": "yes",
-            "count": 1,
+            "side": side,
+            "count": volume,
             "type": "limit",
             "yes_price": 99,
             "client_order_id": str(uuid.uuid4())
